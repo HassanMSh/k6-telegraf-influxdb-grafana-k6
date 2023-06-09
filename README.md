@@ -288,5 +288,5 @@ k6s-telegraf-influxdb-grafana on Kubernetes is a streamlined solution for monito
 [Medium article 1](https://medium.com/starschema-blog/monitor-your-infrastructure-with-influxdb-and-grafana-on-kubernetes-a299a0afe3d2)\
 [Medium article 2](https://www.gojek.io/blog/diy-set-up-telegraf-influxdb-grafana-on-kubernetes)\
 [InfluxDB Documentation](https://docs.influxdata.com/)\
-[Telegraf Documentation](https://www.influxdata.com/time-series-platform/telegraf/)\
+[Telegraf Documentation](https://www.influxdata.com/time-series-platform/telegraf/)
 
