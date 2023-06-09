@@ -33,6 +33,11 @@ spec:
         image: docker.io/grafana/grafana:9.3.8
         imagePullPolicy: IfNotPresent
         name: grafana
+        volumeMounts:
+        - mountPath: /var/lib/grafana
+          name: data-dir
+#        securityContext:
+#          fsGroup: 472
         resources: {
           "limits": {
             "cpu": "100m",
@@ -45,6 +50,10 @@ spec:
         }
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: File
+      volumes:
+       - name: data-dir
+         persistentVolumeClaim:
+           claimName: graf-data-dir-pvc
       dnsPolicy: ClusterFirst
       restartPolicy: Always
       schedulerName: default-scheduler
