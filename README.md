@@ -91,7 +91,7 @@ k6s-telegraf-influxdb-grafana on Kubernetes is a streamlined solution for monito
 
 ### Expose the service
 
-check on linode later
+	minikube service influx
 
 ## Telegraf with statsd plugin
 
@@ -281,8 +281,6 @@ check on linode later
 ### Test k6
 
 	k6 run --out influxdb=http://username:password@IP:PORT/DBNAME simple.js --insecure-skip-tls-verify --vus 10 --duration 2m --no-summary
-
-k6 run --out influxdb=http://user:password@192.168.49.2:30523/monitoring simple.js --insecure-skip-tls-verify --vus 1 --duration 2m --no-summary
 
 ## References
 
