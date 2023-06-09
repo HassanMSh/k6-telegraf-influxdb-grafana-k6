@@ -26,10 +26,3 @@ data:
       percentile_limit = 1000
       parse_data_dog_tags = true
       read_buffer_size = 65535
-
-    [[aggregators.basicstats]]
-      period = "30s
-      drop_original = false
-      stats = ["count", "min", "max", "mean", "stdev", "s2", "sum"]
-
-    [[outputs.discard]]
