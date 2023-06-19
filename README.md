@@ -1,11 +1,10 @@
-# k6-telegraf-influxdb-grafana-k8s
-k6s-telegraf-influxdb-grafana on Kubernetes is a streamlined solution for monitoring and performance testing in Kubernetes. It combines k6, Telegraf, InfluxDB, and Grafana to provide scalable and customizable monitoring capabilities.
+# k6 on k8s
 
 ## InfluxDB
 
 ### InfluxDB Secret
 
-	kubectl create secret generic influxdb-creds --from-literal=INFLUXDB_DB=monitoring --from-literal=INFLUXDB_USER=user --from-literal=INFLUXDB_USER_PASSWORD=password --from-literal=INFLUXDB_READ_USER=readonly --from-literal=INFLUXDB_ADMIN_USER=root --from-literal=INFLUXDB_ADMIN_USER_PASSWORD=password --from-literal=INFLUXDB_HOST=influxdb  --from-literal=INFLUXDB_HTTP_AUTH_ENABLED=true
+	kubectl create secret generic influxdb-creds --from-literal=INFLUXDB_DB=monitoring --from-literal=INFLUXDB_USER=user --from-literal=INFLUXDB_USER_PASSWORD=password --from-literal=INFLUXDB_READ_USER=readonly --from-literal=INFLUXDB_ADMIN_USER=root --from-literal=INFLUXDB_ADMIN_USER_PASSWORD=password --from-literal=INFLUXDB_HOST=influxdb  --from-literal=INFLUXDB_HTTP_AUTH_ENABLED=true -n monitoring
 
 ### InfluxDB PVC
 
@@ -86,17 +85,19 @@ k6s-telegraf-influxdb-grafana on Kubernetes is a streamlined solution for monito
 ### Deploy the yaml files:
 
 	kubectl apply -f influxdb-deployment.yaml
-	kubectl apply -f influx-pvc.yaml
+	kubectl apply -f influxdb-pvc.yaml
 	kubectl apply -f influxdb-svc.yaml
 
 ### Expose the service
 
-	minikube service influx
+	minikube service influxdb --namespace monitoring
 
 ## Telegraf with statsd plugin
 
 ### Telegraf ConfigMap
 
+	---
+	
 	apiVersion: v1
 	kind: ConfigMap
 	metadata:
@@ -104,30 +105,44 @@ k6s-telegraf-influxdb-grafana on Kubernetes is a streamlined solution for monito
 	  namespace: monitoring
 	data:
 	  telegraf.conf: |+
+	    [agent]
+	      interval = "10s"
+	      round_interval = true
+	      metric_batch_size = 1000
+	      metric_buffer_limit = 10000
+	      collection_jitter = "0s"
+	      flush_interval = "10s"
+	      flush_jitter = "0s"
+	      precision = ""
+	      quiet = false
+	      hostname = ""
+	      omit_hostname = false
+	
 	    [[outputs.influxdb]]
-	      urls = ["$http://$INFLUXDB_HOST:8086/"]
+	      urls = ["http://$INFLUXDB_HOST:8086/"]
+	      skip_database_creation = true
 	      database = "$INFLUXDB_DB"
 	      username = "$INFLUXDB_USER"
 	      password = "$INFLUXDB_USER_PASSWORD"
+	      timeout = "5s"
+	      write_consistency = "any"
+	      retention_policy = ""
+	
 	    [[inputs.statsd]]
-	      max_tcp_connections = 250
-	      tcp_keep_alive = false
-	      service_address = ":8125"
-	      delete_gauges = true
-	      delete_counters = true
-	      delete_sets = true
-	      delete_timings = true
-	      metric_separator = "."
-	      allowed_pending_messages = 10000
-	      percentile_limit = 1000
-	      parse_data_dog_tags = true 
-	      read_buffer_size = 65535	
-
-### Telegraf Service
-
-	kubectl expose deployment telegraf --port=8125 --target-port=8125 --protocol=UDP --type=NodePort
-
-	minikube service telegraf --namespace monitoring
+	       protocol = "udp"
+	       max_tcp_connections = 250
+	       tcp_keep_alive = false
+	       service_address = ":8125"
+	       delete_gauges = true
+	       delete_counters = true
+	       delete_sets = true
+	       delete_timings = true
+	       metric_separator = ","
+	       allowed_pending_messages = 100000
+	       percentile_limit = 10000
+	       read_buffer_size = 65535
+	       datadog_extensions = true
+	       percentiles = [90.0, 95.0, 99.0]
 
 ### Telegraf Deployment
 
@@ -175,13 +190,18 @@ k6s-telegraf-influxdb-grafana on Kubernetes is a streamlined solution for monito
 
 	kubectl apply -f telegraf-configmap.yaml
 	kubectl apply -f telegraf-deployment.yaml
-	influxdb-svc.yaml
+
+### Telegraf Service
+
+	kubectl expose deployment telegraf --port=8125 --target-port=8125 --protocol=UDP --type=NodePort -n monitoring
+
+	minikube service telegraf --namespace monitoring
 
 ## Grafana
 
 ### Grafana Secret
 
-	kubectl create secret generic grafana-creds --from-literal=GF_SECURITY_ADMIN_USER=admin --from-literal=GF_SECURITY_ADMIN_PASSWORD=admin
+	kubectl create secret generic grafana-creds --from-literal=GF_SECURITY_ADMIN_USER=admin --from-literal=GF_SECURITY_ADMIN_PASSWORD=admin -n monitoring
 
 ### Grafana Deployment
 
@@ -220,6 +240,11 @@ k6s-telegraf-influxdb-grafana on Kubernetes is a streamlined solution for monito
 	        image: docker.io/grafana/grafana:9.3.8
 	        imagePullPolicy: IfNotPresent
 	        name: grafana
+	        volumeMounts:
+	        - mountPath: /var/lib/grafana
+	          name: data-dir
+	#        securityContext:
+	#          fsGroup: 472
 	        resources: {
 	          "limits": {
 	            "cpu": "100m",
@@ -232,13 +257,29 @@ k6s-telegraf-influxdb-grafana on Kubernetes is a streamlined solution for monito
 	        }
 	        terminationMessagePath: /dev/termination-log
 	        terminationMessagePolicy: File
+	      volumes:
+	       - name: data-dir
+	         persistentVolumeClaim:
+	           claimName: graf-data-dir-pvc
 	      dnsPolicy: ClusterFirst
 	      restartPolicy: Always
 	      schedulerName: default-scheduler
 	      securityContext: {}
 	      terminationGracePeriodSeconds: 30
 
-### For future reference a persistent volume should be added to grafana
+### persistent volume claim grafana
+
+	apiVersion: v1
+	kind: PersistentVolumeClaim
+	metadata:
+	  name: graf-data-dir-pvc
+	  namespace: monitoring
+	spec:
+	  accessModes:
+	    - ReadWriteOnce
+	  resources:
+	    requests:
+	      storage: 3Gi
 
 ### Expose Grafana
 
@@ -250,11 +291,12 @@ k6s-telegraf-influxdb-grafana on Kubernetes is a streamlined solution for monito
 + Click on the setting icon and click on data sources
 + Choose influxdb
 + Add the necessary config:
-	* ipaddress:port
-	* username
-	* password
+	* ipaddress:port // http://influxdb:8086
+	* username // user
+	* password // password
 + save
-+ Goto dashboards and import the following ID 2587 to get the k6 loadtesting results
++ Goto dashboards
+	* import the dashboard.json get the k6 loadtesting results
 
 ## k6
 
@@ -280,13 +322,21 @@ k6s-telegraf-influxdb-grafana on Kubernetes is a streamlined solution for monito
 
 ### Test k6
 
-	k6 run --out influxdb=http://username:password@IP:PORT/DBNAME simple.js --insecure-skip-tls-verify --vus 10 --duration 2m --no-summary
+	k6 run --out influxdb=http://username:password@InfluxdbExposedIP:ExposedPORT/DBNAME simple.js --insecure-skip-tls-verify --vus 10 --duration 2m --no-summary
 
-## References
+	k6 run --out influxdb=http://user:password@192.168.58.2:31896/monitoring simple.js --insecure-skip-tls-verify --vus 1 --duration 2m --no-summary
 
-[docker-compose version](https://medium.com/@nairgirish100/k6-with-docker-compose-influxdb-grafana-344ded339540)\
-[Medium article 1](https://medium.com/starschema-blog/monitor-your-infrastructure-with-influxdb-and-grafana-on-kubernetes-a299a0afe3d2)\
-[Medium article 2](https://www.gojek.io/blog/diy-set-up-telegraf-influxdb-grafana-on-kubernetes)\
-[InfluxDB Documentation](https://docs.influxdata.com/)\
+### Test k6 with statsd
+
+	K6_STATSD_ENABLE_TAGS=true K6_STATSD_PUSH_INTERVAL=100ms K6_STATSD_ADDR=192.168.58.2:30531 k6 run --out statsd simple.js --insecure-skip-tls-verify --vus 10 --duration 10m --no-summary
+
+
+	K6_STATSD_ENABLE_TAGS=true K6_STATSD_PUSH_INTERVAL=100ms K6_STATSD_ADDR=TelegrafIP:PORT k6 run --out statsd simple.js --insecure-skip-tls-verify --vus 10 --duration 10m --no-summary
+
+
+[docker-compose version](https://medium.com/@nairgirish100/k6-with-docker-compose-influxdb-grafana-344ded339540)
+[Medium article 1](https://medium.com/starschema-blog/monitor-your-infrastructure-with-influxdb-and-grafana-on-kubernetes-a299a0afe3d2)
+[Medium article 2](https://www.gojek.io/blog/diy-set-up-telegraf-influxdb-grafana-on-kubernetes)
+[InfluxDB Documentation](https://docs.influxdata.com/)
 [Telegraf Documentation](https://www.influxdata.com/time-series-platform/telegraf/)
-
+[Statsd](https://k6.io/docs/results-output/real-time/statsd/)
